@@ -1,5 +1,5 @@
 use anyhow::Result;
-use turbo_tasks::Vc;
+use turbo_tasks::{RcStr, Vc};
 use turbopack_core::chunk::module_id_strategies::{GlobalModuleIdStrategy, ModuleIdStrategy};
 use turbopack_ecmascript::global_module_id_strategy::{
     children_modules_idents, merge_preprocessed_module_ids, PreprocessedChildrenIdents,
@@ -39,7 +39,7 @@ impl GlobalModuleIdStrategyBuilder {
             preprocessed_module_ids.push(preprocess_module_ids(*instrumentation.edge));
         }
 
-        for (_, route) in entrypoints.routes.iter() {
+        for (name, route) in entrypoints.routes.iter() {
             match route {
                 Route::Page {
                     html_endpoint,
@@ -52,6 +52,7 @@ impl GlobalModuleIdStrategyBuilder {
                     preprocessed_module_ids.push(preprocess_module_ids(**endpoint));
                 }
                 Route::AppPage(page_routes) => {
+                    preprocessed_module_ids.push(preprocess_action_loader_module(name.clone()));
                     for page_route in page_routes {
                         preprocessed_module_ids
                             .push(preprocess_module_ids(*page_route.html_endpoint));
@@ -77,6 +78,22 @@ impl GlobalModuleIdStrategyBuilder {
             GlobalModuleIdStrategy::new(module_id_map).await?,
         ))
     }
+}
+
+#[turbo_tasks::function]
+async fn preprocess_action_loader_module(name: RcStr) -> Result<Vc<PreprocessedChildrenIdents>> {
+    let name = if name == "/" {
+        "".to_string()
+    } else {
+        name.to_string()
+    };
+
+    let ident = format!(
+        "[project]/.next-internal/server/app{}/page/actions.js [app-rsc] (ecmascript)",
+        name
+    );
+
+    Ok(PreprocessedChildrenIdents::from_single_ident(ident.into()))
 }
 
 // NOTE(LichuAcu) We can't move this function to `turbopack-core` because we need access to
