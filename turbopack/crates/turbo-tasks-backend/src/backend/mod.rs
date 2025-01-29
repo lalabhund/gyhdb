@@ -1208,6 +1208,8 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
         let mut removed_data = Vec::new();
         let mut old_edges = Vec::new();
 
+        let has_children = !new_children.is_empty();
+
         // Prepare all new children
         prepare_new_children(task_id, &mut task, &new_children, &mut queue);
 
