@@ -20,6 +20,7 @@ pub mod worker;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashMap},
+    future::Future,
     mem::take,
     sync::Arc,
 };
@@ -53,11 +54,14 @@ use swc_core::{
 };
 use tracing::Instrument;
 use turbo_rcstr::RcStr;
-use turbo_tasks::{FxIndexSet, ResolvedVc, TryJoinIterExt, Upcast, Value, ValueToString, Vc};
+use turbo_tasks::{
+    FxIndexMap, FxIndexSet, ReadRef, ResolvedVc, TryJoinIterExt, Upcast, Value, ValueToString, Vc,
+};
 use turbo_tasks_fs::FileSystemPath;
 use turbopack_core::{
     compile_time_info::{
         CompileTimeInfo, DefineableNameSegment, FreeVarReference, FreeVarReferences,
+        FreeVarReferencesIndividual,
     },
     environment::Rendering,
     error::PrettyPrintError,
@@ -358,6 +362,7 @@ struct AnalysisState<'a> {
     import_externals: bool,
     ignore_dynamic_requests: bool,
     url_rewrite_behavior: Option<UrlRewriteBehavior>,
+    free_var_references: ReadRef<FreeVarReferencesIndividual>,
 }
 
 impl AnalysisState<'_> {
@@ -372,6 +377,7 @@ impl AnalysisState<'_> {
                     *self.origin,
                     value,
                     *self.compile_time_info,
+                    &self.free_var_references,
                     self.var_graph,
                     attributes,
                 )
@@ -943,6 +949,11 @@ pub(crate) async fn analyse_ecmascript_module_internal(
             import_externals: options.import_externals,
             ignore_dynamic_requests: options.ignore_dynamic_requests,
             url_rewrite_behavior: options.url_rewrite_behavior,
+            free_var_references: compile_time_info
+                .await?
+                .free_var_references
+                .individual()
+                .await?,
         };
 
         enum Action {
@@ -1269,9 +1280,9 @@ pub(crate) async fn analyse_ecmascript_module_internal(
                     span,
                     in_try: _,
                 } => {
-                    let obj = analysis_state
-                        .link_value(*obj, ImportAttributes::empty_ref())
-                        .await?;
+                    // Intentionally not awaited because `handle_member` reads this only when neeed.
+                    let obj = analysis_state.link_value(*obj, ImportAttributes::empty_ref());
+
                     let prop = analysis_state
                         .link_value(*prop, ImportAttributes::empty_ref())
                         .await?;
@@ -2305,47 +2316,62 @@ async fn handle_call<G: Fn(Vec<Effect>) + Send + Sync>(
 
 async fn handle_member(
     ast_path: &[AstParentKind],
-    obj: JsValue,
+    link_obj: impl Future<Output = Result<JsValue>> + Send + Sync,
     prop: JsValue,
     span: Span,
     state: &AnalysisState<'_>,
     analysis: &mut AnalyzeEcmascriptModuleResultBuilder,
 ) -> Result<()> {
     if let Some(prop) = prop.as_str() {
-        let prop = DefineableNameSegment::Name(prop.into());
-        if let Some(def_name_len) = obj.get_defineable_name_len() {
-            let compile_time_info = state.compile_time_info.await?;
-            let free_var_references = compile_time_info.free_var_references.individual().await?;
-            for (name, value) in free_var_references.iter() {
-                if name.len() != def_name_len + 1 {
-                    continue;
-                }
-                let mut it = name.iter().map(Cow::Borrowed).rev();
-                if it.next().unwrap().as_ref() != &prop {
-                    continue;
-                }
-                if it.eq(obj.iter_defineable_name_rev())
-                    && handle_free_var_reference(ast_path, &*value.await?, span, state, analysis)
+        let prop_seg = DefineableNameSegment::Name(prop.into());
+
+        let references = state.free_var_references.get(&prop_seg);
+        let is_prop_cache = prop == "cache";
+
+        // This isn't pretty, but we cannot await the future twice in the two branches below.
+        let obj = if references.is_some() || is_prop_cache {
+            Some(link_obj.await?)
+        } else {
+            None
+        };
+
+        if let Some(references) = references {
+            let obj = obj.as_ref().unwrap();
+            if let Some(def_name_len) = obj.get_defineable_name_len() {
+                for (name, value) in references {
+                    if name.len() != def_name_len {
+                        continue;
+                    }
+
+                    let it = name.iter().map(Cow::Borrowed).rev();
+                    if it.eq(obj.iter_defineable_name_rev())
+                        && handle_free_var_reference(
+                            ast_path,
+                            &*value.await?,
+                            span,
+                            state,
+                            analysis,
+                        )
                         .await?
-                {
-                    return Ok(());
+                    {
+                        return Ok(());
+                    }
                 }
             }
         }
-    }
-    match (obj, prop) {
-        (
-            JsValue::WellKnownFunction(WellKnownFunctionKind::Require { .. }),
-            JsValue::Constant(s),
-        ) if s.as_str() == Some("cache") => {
-            analysis.add_code_gen(
-                CjsRequireCacheAccess {
-                    path: ResolvedVc::cell(ast_path.to_vec()),
-                }
-                .cell(),
-            );
+
+        if is_prop_cache {
+            if let JsValue::WellKnownFunction(WellKnownFunctionKind::Require { .. }) =
+                obj.as_ref().unwrap()
+            {
+                analysis.add_code_gen(
+                    CjsRequireCacheAccess {
+                        path: ResolvedVc::cell(ast_path.to_vec()),
+                    }
+                    .cell(),
+                );
+            }
         }
-        _ => {}
     }
 
     Ok(())
@@ -2366,7 +2392,7 @@ async fn handle_typeof(
             .free_var_references
             .individual()
             .await?,
-        &Some(DefineableNameSegment::TypeOf),
+        &DefineableNameSegment::TypeOf,
     ) {
         handle_free_var_reference(ast_path, &*value.await?, span, state, analysis).await?;
     }
@@ -2382,19 +2408,19 @@ async fn handle_free_var(
     analysis: &mut AnalyzeEcmascriptModuleResultBuilder,
 ) -> Result<()> {
     if let Some(def_name_len) = var.get_defineable_name_len() {
-        let compile_time_info = state.compile_time_info.await?;
-        let free_var_references = compile_time_info.free_var_references.individual().await?;
-        for (name, value) in free_var_references.iter() {
-            if name.len() != def_name_len {
-                continue;
-            }
+        let first = var.iter_defineable_name_rev().next().unwrap();
+        if let Some(references) = state.free_var_references.get(&*first) {
+            for (name, value) in references {
+                if name.len() + 1 != def_name_len {
+                    continue;
+                }
 
-            if var
-                .iter_defineable_name_rev()
-                .eq(name.iter().map(Cow::Borrowed).rev())
-            {
-                handle_free_var_reference(ast_path, &*value.await?, span, state, analysis).await?;
-                return Ok(());
+                let it = name.iter().map(Cow::Borrowed).rev();
+                if it.eq(var.iter_defineable_name_rev().skip(1)) {
+                    handle_free_var_reference(ast_path, &*value.await?, span, state, analysis)
+                        .await?;
+                    return Ok(());
+                }
             }
         }
     }
@@ -2711,11 +2737,22 @@ async fn value_visitor(
     origin: Vc<Box<dyn ResolveOrigin>>,
     v: JsValue,
     compile_time_info: Vc<CompileTimeInfo>,
+    free_var_references: &FxIndexMap<
+        DefineableNameSegment,
+        FxIndexMap<Vec<DefineableNameSegment>, ResolvedVc<FreeVarReference>>,
+    >,
     var_graph: &VarGraph,
     attributes: &ImportAttributes,
 ) -> Result<(JsValue, bool)> {
-    let (mut v, modified) =
-        value_visitor_inner(origin, v, compile_time_info, var_graph, attributes).await?;
+    let (mut v, modified) = value_visitor_inner(
+        origin,
+        v,
+        compile_time_info,
+        free_var_references,
+        var_graph,
+        attributes,
+    )
+    .await?;
     v.normalize_shallow();
     Ok((v, modified))
 }
@@ -2724,6 +2761,10 @@ async fn value_visitor_inner(
     origin: Vc<Box<dyn ResolveOrigin>>,
     v: JsValue,
     compile_time_info: Vc<CompileTimeInfo>,
+    free_var_references: &FxIndexMap<
+        DefineableNameSegment,
+        FxIndexMap<Vec<DefineableNameSegment>, ResolvedVc<FreeVarReference>>,
+    >,
     var_graph: &VarGraph,
     attributes: &ImportAttributes,
 ) -> Result<(JsValue, bool)> {
@@ -2731,11 +2772,11 @@ async fn value_visitor_inner(
     // This check is just an optimization
     if v.get_defineable_name_len().is_some() {
         let compile_time_info = compile_time_info.await?;
-        if let JsValue::TypeOf(..) = v {
-            if let Some(value) = v.match_free_var_reference(
+        if let JsValue::TypeOf(_, arg) = &v {
+            if let Some(value) = arg.match_free_var_reference(
                 Some(var_graph),
-                &*compile_time_info.free_var_references.individual().await?,
-                &None,
+                free_var_references,
+                &DefineableNameSegment::TypeOf,
             ) {
                 return Ok(((&*value.await?).into(), true));
             }
