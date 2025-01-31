@@ -243,10 +243,12 @@ function Head({
 function Router({
   actionQueue,
   assetPrefix,
+  basePath,
   globalError,
 }: {
   actionQueue: AppRouterActionQueue
   assetPrefix: string
+  basePath: string
   globalError: [GlobalErrorComponent, React.ReactNode]
 }) {
   const [state, dispatch] = useReducer(actionQueue)
@@ -338,10 +340,11 @@ function Router({
           })
         }
       },
+      basePath,
     }
 
     return routerInstance
-  }, [actionQueue, dispatch, navigate])
+  }, [actionQueue, dispatch, navigate, basePath])
 
   useEffect(() => {
     // Exists for debugging purposes. Don't use in application code.
@@ -663,10 +666,12 @@ export default function AppRouter({
   actionQueue,
   globalErrorComponentAndStyles: [globalErrorComponent, globalErrorStyles],
   assetPrefix,
+  basePath,
 }: {
   actionQueue: AppRouterActionQueue
   globalErrorComponentAndStyles: [GlobalErrorComponent, React.ReactNode]
   assetPrefix: string
+  basePath: string
 }) {
   useNavFailureHandler()
 
@@ -679,6 +684,7 @@ export default function AppRouter({
       <Router
         actionQueue={actionQueue}
         assetPrefix={assetPrefix}
+        basePath={basePath}
         globalError={[globalErrorComponent, globalErrorStyles]}
       />
     </ErrorBoundary>

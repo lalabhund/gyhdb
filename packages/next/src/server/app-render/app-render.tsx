@@ -220,6 +220,7 @@ export type AppRenderContext = {
   pagePath: string
   clientReferenceManifest: DeepReadonly<ClientReferenceManifest>
   assetPrefix: string
+  basePath: string
   isNotFoundPath: boolean
   nonce: string | undefined
   res: BaseNextResponse
@@ -861,6 +862,7 @@ async function getRSCPayload(
     P: <Preloads preloadCallbacks={preloadCallbacks} />,
     b: ctx.sharedContext.buildId,
     p: ctx.assetPrefix,
+    a: ctx.basePath,
     c: prepareInitialCanonicalUrl(url),
     i: !!couldBeIntercepted,
     f: [
@@ -995,6 +997,7 @@ async function getErrorRSCPayload(
   return {
     b: ctx.sharedContext.buildId,
     p: ctx.assetPrefix,
+    a: ctx.basePath,
     c: prepareInitialCanonicalUrl(url),
     m: undefined,
     i: false,
@@ -1064,6 +1067,7 @@ function App<T>({
           actionQueue={actionQueue}
           globalErrorComponentAndStyles={response.G}
           assetPrefix={response.p}
+          basePath={response.a}
         />
       </ServerInsertedHTMLProvider>
     </HeadManagerContext.Provider>
@@ -1112,6 +1116,7 @@ function AppWithoutContext<T>({
       actionQueue={actionQueue}
       globalErrorComponentAndStyles={response.G}
       assetPrefix={response.p}
+      basePath={response.a}
     />
   )
 }
@@ -1155,6 +1160,7 @@ async function renderToHTMLOrFlightImpl(
     nextFontManifest,
     serverActions,
     assetPrefix = '',
+    basePath = '',
     enableTainting,
   } = renderOpts
 
@@ -1304,6 +1310,7 @@ async function renderToHTMLOrFlightImpl(
     nonce,
     res,
     sharedContext,
+    basePath,
   }
 
   getTracer().setRootSpanAttribute('next.route', pagePath)
