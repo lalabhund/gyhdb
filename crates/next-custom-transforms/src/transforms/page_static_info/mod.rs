@@ -1,10 +1,9 @@
-use std::collections::{HashMap, HashSet};
-
 use anyhow::Result;
 pub use collect_exported_const_visitor::Const;
 use collect_exports_visitor::CollectExportsVisitor;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use swc_core::{
     base::SwcComments,
@@ -63,8 +62,8 @@ pub struct ExportInfo {
     pub generate_image_metadata: Option<bool>,
     pub generate_sitemaps: Option<bool>,
     pub generate_static_params: bool,
-    pub extra_properties: HashSet<String>,
-    pub directives: HashSet<String>,
+    pub extra_properties: FxHashSet<String>,
+    pub directives: FxHashSet<String>,
     /// extra properties to bubble up warning messages from visitor,
     /// since this isn't a failure to abort the process.
     pub warnings: Vec<ExportInfoWarning>,
@@ -209,8 +208,8 @@ pub fn collect_rsc_module_info(
 /// error.
 pub fn extract_exported_const_values(
     source_ast: &Program,
-    properties_to_extract: HashSet<String>,
-) -> HashMap<String, Option<Const>> {
+    properties_to_extract: FxHashSet<String>,
+) -> FxHashMap<String, Option<Const>> {
     GLOBALS.set(&Default::default(), || {
         let mut visitor =
             collect_exported_const_visitor::CollectExportedConstVisitor::new(properties_to_extract);
