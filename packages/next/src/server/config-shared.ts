@@ -1070,6 +1070,11 @@ export interface NextConfig extends Record<string, any> {
   watchOptions?: {
     pollIntervalMs?: number
   }
+
+  /**
+   * Disable instrumentation in specific environments.
+   */
+  disableInstrumentation?: boolean | ((options: any) => boolean)
 }
 
 export const defaultConfig: NextConfig = {
@@ -1258,6 +1263,7 @@ export const defaultConfig: NextConfig = {
     slowModuleDetection: undefined,
   },
   bundlePagesRouterDependencies: false,
+  disableInstrumentation: false,
 }
 
 export async function normalizeConfig(phase: string, config: any) {
