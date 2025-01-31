@@ -34,7 +34,6 @@ export function ErrorOverlayPagination({
 
   const buttonLeft = useRef<HTMLButtonElement | null>(null)
   const buttonRight = useRef<HTMLButtonElement | null>(null)
-  const buttonClose = useRef<HTMLButtonElement | null>(null)
 
   const [nav, setNav] = useState<HTMLElement | null>(null)
   const onNav = useCallback((el: HTMLElement) => {
@@ -64,18 +63,6 @@ export function ErrorOverlayPagination({
           buttonRight.current.focus()
         }
         handleNext && handleNext()
-      } else if (e.key === 'Escape') {
-        e.preventDefault()
-        e.stopPropagation()
-        if (root instanceof ShadowRoot) {
-          const a = root.activeElement
-          if (a && a !== buttonClose.current && a instanceof HTMLElement) {
-            a.blur()
-            return
-          }
-        }
-
-        close?.()
       }
     }
 
@@ -160,6 +147,7 @@ export function ErrorOverlayPagination({
 
 export const styles = css`
   .error-overlay-pagination {
+    -webkit-font-smoothing: antialiased;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -167,9 +155,9 @@ export const styles = css`
     padding: 4px;
     gap: 8px;
     background: var(--color-background-100);
-    box-shadow: var(--shadow-sm);
-
-    border: 1px solid var(--color-gray-400);
+    background-clip: padding-box;
+    box-shadow: var(--shadow-small);
+    border: 1px solid var(--color-gray-alpha-400);
     border-radius: var(--rounded-full);
   }
 
@@ -179,6 +167,7 @@ export const styles = css`
     font-size: var(--size-font-small);
     font-weight: 500;
     line-height: 16px;
+    font-variant-numeric: tabular-nums;
   }
 
   .error-overlay-pagination-button {
