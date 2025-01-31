@@ -1,10 +1,13 @@
 use anyhow::{bail, Result};
+use serde::{Deserialize, Serialize};
 use swc_core::{
     ecma::ast::{Expr, ExprOrSpread, NewExpr},
     quote,
 };
 use turbo_rcstr::RcStr;
-use turbo_tasks::{ResolvedVc, Value, ValueToString, Vc};
+use turbo_tasks::{
+    trace::TraceRawVcs, NonLocalValue, ResolvedVc, TaskInput, Value, ValueToString, Vc,
+};
 use turbopack_core::{
     chunk::{
         ChunkItemExt, ChunkableModule, ChunkableModuleReference, ChunkingContext, ChunkingType,
@@ -31,8 +34,19 @@ use crate::{
 /// Determines how to treat `new URL(...)` rewrites.
 /// This allows to construct url depends on the different building context,
 /// e.g. SSR, CSR, or Node.js.
-#[turbo_tasks::value(shared)]
-#[derive(Debug, Copy, Clone, Hash)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+    Hash,
+    Serialize,
+    Deserialize,
+    TraceRawVcs,
+    TaskInput,
+    NonLocalValue,
+)]
 pub enum UrlRewriteBehavior {
     /// Omits base, resulting in a relative URL.
     Relative,
@@ -55,7 +69,7 @@ pub struct UrlAssetReference {
     ast_path: ResolvedVc<AstPath>,
     issue_source: ResolvedVc<IssueSource>,
     in_try: bool,
-    url_rewrite_behavior: ResolvedVc<UrlRewriteBehavior>,
+    url_rewrite_behavior: UrlRewriteBehavior,
 }
 
 #[turbo_tasks::value_impl]
@@ -68,7 +82,7 @@ impl UrlAssetReference {
         ast_path: ResolvedVc<AstPath>,
         issue_source: ResolvedVc<IssueSource>,
         in_try: bool,
-        url_rewrite_behavior: ResolvedVc<UrlRewriteBehavior>,
+        url_rewrite_behavior: UrlRewriteBehavior,
     ) -> Vc<Self> {
         UrlAssetReference {
             origin,
@@ -147,9 +161,8 @@ impl CodeGenerateable for UrlAssetReference {
     ) -> Result<Vc<CodeGeneration>> {
         let this = self.await?;
         let mut visitors = vec![];
-        let rewrite_behavior = &*this.url_rewrite_behavior.await?;
 
-        match rewrite_behavior {
+        match this.url_rewrite_behavior {
             UrlRewriteBehavior::Relative => {
                 let referenced_asset = self.get_referenced_asset().await?;
                 let ast_path = this.ast_path.await?;
