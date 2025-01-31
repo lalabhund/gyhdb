@@ -176,11 +176,6 @@ impl NodeJsChunkingContext {
     pub fn runtime_type(&self) -> RuntimeType {
         self.runtime_type
     }
-
-    /// Returns the minify type.
-    pub fn minify_type(&self) -> MinifyType {
-        self.minify_type
-    }
 }
 
 #[turbo_tasks::value_impl]
@@ -246,6 +241,11 @@ impl ChunkingContext for NodeJsChunkingContext {
     #[turbo_tasks::function]
     fn is_tracing_enabled(&self) -> Vc<bool> {
         Vc::cell(self.enable_file_tracing)
+    }
+
+    #[turbo_tasks::function]
+    pub fn minify_type(&self) -> Vc<MinifyType> {
+        self.minify_type.cell()
     }
 
     #[turbo_tasks::function]

@@ -191,7 +191,7 @@ impl EcmascriptDevEvaluateChunk {
 
         let code = code.build().cell();
         if matches!(
-            this.chunking_context.await?.minify_type(),
+            *this.chunking_context.minify_type().await?,
             MinifyType::Minify
         ) {
             return Ok(minify(chunk_path_vc, code, source_maps));
