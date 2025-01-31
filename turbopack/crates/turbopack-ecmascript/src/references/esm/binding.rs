@@ -7,10 +7,7 @@ use swc_core::{
             ComputedPropName, Expr, Ident, KeyValueProp, Lit, MemberExpr, MemberProp, Number, Prop,
             PropName, SeqExpr, SimpleAssignTarget, Str,
         },
-        visit::{
-            fields::{CalleeField, PropField},
-            AstParentKind,
-        },
+        visit::fields::{CalleeField, PropField},
     },
 };
 use turbo_rcstr::RcStr;
@@ -19,7 +16,7 @@ use turbopack_core::{chunk::ChunkingContext, module_graph::ModuleGraph};
 
 use super::EsmAssetReference;
 use crate::{
-    code_gen::{CodeGen, CodeGeneration, VisitorFactory},
+    code_gen::{CodeGen, CodeGeneration},
     create_visitor,
     references::AstPath,
 };
@@ -46,16 +43,18 @@ impl EsmBinding {
         }
     }
 
-    async fn to_visitors(
+    pub async fn code_generation(
         &self,
-        visitors: &mut Vec<(Vec<AstParentKind>, Box<dyn VisitorFactory>)>,
-    ) -> Result<()> {
-        let item = self.clone();
-        let imported_module = self.reference.get_referenced_asset();
+        _module_graph: Vc<ModuleGraph>,
+        _chunking_context: Vc<Box<dyn ChunkingContext>>,
+    ) -> Result<Vc<CodeGeneration>> {
+        let mut visitors = vec![];
 
-        let mut ast_path = item.ast_path.await?.clone_value();
+        let export = self.export.clone();
+        let imported_module = self.reference.get_referenced_asset();
         let imported_module = imported_module.await?.get_ident().await?;
 
+        let mut ast_path = self.ast_path.await?.clone_value();
         loop {
             match ast_path.last() {
                 // Shorthand properties get special treatment because we need to rewrite them to
@@ -69,7 +68,7 @@ impl EsmBinding {
                             if let Some(imported_ident) = imported_module.as_deref() {
                                 *prop = Prop::KeyValue(KeyValueProp {
                                     key: PropName::Ident(ident.clone().into()),
-                                    value: Box::new(make_expr(imported_ident, item.export.as_deref(), ident.span, false))
+                                    value: Box::new(make_expr(imported_ident, export.as_deref(), ident.span, false))
                                 });
                             }
                         }
@@ -87,15 +86,16 @@ impl EsmBinding {
                     );
 
                     visitors.push(
-                    create_visitor!(exact ast_path, visit_mut_expr(expr: &mut Expr) {
-                        if let Some(ident) = imported_module.as_deref() {
-                            use swc_core::common::Spanned;
-                            *expr = make_expr(ident, item.export.as_deref(), expr.span(), in_call);
-                        }
-                        // If there's no identifier for the imported module,
-                        // resolution failed and will insert code that throws
-                        // before this expression is reached. Leave behind the original identifier.
-                    }));
+                        create_visitor!(exact ast_path, visit_mut_expr(expr: &mut Expr) {
+                            if let Some(ident) = imported_module.as_deref() {
+                                use swc_core::common::Spanned;
+                                *expr = make_expr(ident, export.as_deref(), expr.span(), in_call);
+                            }
+                            // If there's no identifier for the imported module,
+                            // resolution failed and will insert code that throws
+                            // before this expression is reached. Leave behind the original identifier.
+                        }),
+                    );
                     break;
                 }
                 Some(swc_core::ecma::visit::AstParentKind::BindingIdent(
@@ -115,7 +115,7 @@ impl EsmBinding {
                         create_visitor!(exact ast_path, visit_mut_simple_assign_target(l: &mut SimpleAssignTarget) {
                                 if let Some(ident) = imported_module.as_deref() {
                                     use swc_core::common::Spanned;
-                                    *l = match make_expr(ident, item.export.as_deref(), l.span(), false) {
+                                    *l = match make_expr(ident, export.as_deref(), l.span(), false) {
                                         Expr::Ident(ident) => SimpleAssignTarget::Ident(ident.into()),
                                         Expr::Member(member) => SimpleAssignTarget::Member(member),
                                         _ => unreachable!(),
@@ -132,16 +132,6 @@ impl EsmBinding {
             }
         }
 
-        Ok(())
-    }
-
-    pub async fn code_generation(
-        &self,
-        _module_graph: Vc<ModuleGraph>,
-        _chunking_context: Vc<Box<dyn ChunkingContext>>,
-    ) -> Result<Vc<CodeGeneration>> {
-        let mut visitors = Vec::new();
-        self.to_visitors(&mut visitors).await?;
         Ok(CodeGeneration::visitors(visitors))
     }
 }
