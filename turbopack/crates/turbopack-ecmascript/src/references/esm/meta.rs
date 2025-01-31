@@ -1,17 +1,18 @@
 use std::borrow::Cow;
 
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use swc_core::{
     common::DUMMY_SP,
     ecma::ast::{Expr, Ident},
     quote,
 };
-use turbo_tasks::{ResolvedVc, Vc};
+use turbo_tasks::{debug::ValueDebugFormat, trace::TraceRawVcs, NonLocalValue, ResolvedVc, Vc};
 use turbo_tasks_fs::FileSystemPath;
 use turbopack_core::{chunk::ChunkingContext, module_graph::ModuleGraph};
 
 use crate::{
-    code_gen::{CodeGenerateable, CodeGeneration},
+    code_gen::{CodeGen, CodeGeneration},
     create_visitor, magic_identifier,
     references::AstPath,
 };
@@ -21,24 +22,19 @@ use crate::{
 ///
 /// There can be many references to import.meta, and they appear at any nesting
 /// in the file. But we must only initialize the binding a single time.
-#[turbo_tasks::value(shared)]
-#[derive(Hash, Debug)]
+///
+/// This singleton behavior must be enforced by the caller!
+#[derive(PartialEq, Eq, Serialize, Deserialize, TraceRawVcs, ValueDebugFormat, NonLocalValue)]
 pub struct ImportMetaBinding {
     path: ResolvedVc<FileSystemPath>,
 }
 
-#[turbo_tasks::value_impl]
 impl ImportMetaBinding {
-    #[turbo_tasks::function]
-    pub fn new(path: ResolvedVc<FileSystemPath>) -> Vc<Self> {
-        ImportMetaBinding { path }.cell()
+    pub fn new(path: ResolvedVc<FileSystemPath>) -> Self {
+        ImportMetaBinding { path }
     }
-}
 
-#[turbo_tasks::value_impl]
-impl CodeGenerateable for ImportMetaBinding {
-    #[turbo_tasks::function]
-    async fn code_generation(
+    pub async fn code_generation(
         &self,
         _module_graph: Vc<ModuleGraph>,
         chunking_context: Vc<Box<dyn ChunkingContext>>,
@@ -76,29 +72,28 @@ impl CodeGenerateable for ImportMetaBinding {
     }
 }
 
+impl Into<CodeGen> for ImportMetaBinding {
+    fn into(self) -> CodeGen {
+        CodeGen::ImportMetaBinding(self)
+    }
+}
+
 /// Handles rewriting `import.meta` references into the injected binding created
-/// by ImportMetaBindi ImportMetaBinding.
+/// by ImportMetaBinding.
 ///
 /// There can be many references to import.meta, and they appear at any nesting
 /// in the file. But all references refer to the same mutable object.
-#[turbo_tasks::value(shared)]
-#[derive(Hash, Debug)]
+#[derive(PartialEq, Eq, Serialize, Deserialize, TraceRawVcs, ValueDebugFormat, NonLocalValue)]
 pub struct ImportMetaRef {
     ast_path: ResolvedVc<AstPath>,
 }
 
-#[turbo_tasks::value_impl]
 impl ImportMetaRef {
-    #[turbo_tasks::function]
-    pub fn new(ast_path: ResolvedVc<AstPath>) -> Vc<Self> {
-        ImportMetaRef { ast_path }.cell()
+    pub fn new(ast_path: ResolvedVc<AstPath>) -> Self {
+        ImportMetaRef { ast_path }
     }
-}
 
-#[turbo_tasks::value_impl]
-impl CodeGenerateable for ImportMetaRef {
-    #[turbo_tasks::function]
-    async fn code_generation(
+    pub async fn code_generation(
         &self,
         _module_graph: Vc<ModuleGraph>,
         _chunking_context: Vc<Box<dyn ChunkingContext>>,
@@ -109,6 +104,12 @@ impl CodeGenerateable for ImportMetaRef {
         });
 
         Ok(CodeGeneration::visitors(vec![visitor]))
+    }
+}
+
+impl Into<CodeGen> for ImportMetaRef {
+    fn into(self) -> CodeGen {
+        CodeGen::ImportMetaRef(self)
     }
 }
 
