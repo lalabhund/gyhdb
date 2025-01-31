@@ -146,9 +146,9 @@ impl EsmBinding {
     }
 }
 
-impl Into<CodeGen> for EsmBinding {
-    fn into(self) -> CodeGen {
-        CodeGen::EsmBinding(self)
+impl From<EsmBinding> for CodeGen {
+    fn from(val: EsmBinding) -> Self {
+        CodeGen::EsmBinding(val)
     }
 }
 
