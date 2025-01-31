@@ -35,7 +35,7 @@ pub enum ReferencedAsset {
 pub struct UrlAssetReference {
     pub origin: ResolvedVc<Box<dyn ResolveOrigin>>,
     pub request: ResolvedVc<Request>,
-    pub issue_source: ResolvedVc<IssueSource>,
+    pub issue_source: IssueSource,
 }
 
 #[turbo_tasks::value_impl]
@@ -44,7 +44,7 @@ impl UrlAssetReference {
     pub fn new(
         origin: ResolvedVc<Box<dyn ResolveOrigin>>,
         request: ResolvedVc<Request>,
-        issue_source: ResolvedVc<IssueSource>,
+        issue_source: IssueSource,
     ) -> Vc<Self> {
         Self::cell(UrlAssetReference {
             origin,
@@ -91,7 +91,7 @@ impl ModuleReference for UrlAssetReference {
             *self.origin,
             *self.request,
             Value::new(ReferenceType::Url(UrlReferenceSubType::CssUrl)),
-            Some(*self.issue_source),
+            Some(self.issue_source.clone()),
             false,
         )
     }

@@ -296,7 +296,7 @@ pub trait ProcessCss: ParseCss {
 
 #[turbo_tasks::function]
 pub async fn parse_css(
-    source: Vc<Box<dyn Source>>,
+    source: ResolvedVc<Box<dyn Source>>,
     origin: Vc<Box<dyn ResolveOrigin>>,
     import_context: Vc<ImportContext>,
     ty: CssModuleAssetType,
@@ -341,7 +341,7 @@ async fn process_content(
     code: String,
     fs_path_vc: ResolvedVc<FileSystemPath>,
     filename: &str,
-    source: Vc<Box<dyn Source>>,
+    source: ResolvedVc<Box<dyn Source>>,
     origin: Vc<Box<dyn ResolveOrigin>>,
     import_context: Vc<ImportContext>,
     ty: CssModuleAssetType,
@@ -418,11 +418,7 @@ async fn process_content(
                                         line: loc.line as _,
                                         column: loc.column as _,
                                     };
-                                    Some(
-                                        IssueSource::from_line_col(source, pos, pos)
-                                            .to_resolved()
-                                            .await?,
-                                    )
+                                    Some(IssueSource::from_line_col(source, pos, pos))
                                 }
                                 None => None,
                             };
@@ -452,11 +448,7 @@ async fn process_content(
                             line: loc.line as _,
                             column: loc.column as _,
                         };
-                        Some(
-                            IssueSource::from_line_col(source, pos, pos)
-                                .to_resolved()
-                                .await?,
-                        )
+                        Some(IssueSource::from_line_col(source, pos, pos))
                     }
                     None => None,
                 };
@@ -683,7 +675,7 @@ impl GenerateSourceMap for ParseCssResultSourceMap {
 struct ParsingIssue {
     msg: ResolvedVc<RcStr>,
     file: ResolvedVc<FileSystemPath>,
-    source: Option<ResolvedVc<IssueSource>>,
+    source: Option<IssueSource>,
 }
 
 #[turbo_tasks::value_impl]
@@ -705,8 +697,8 @@ impl Issue for ParsingIssue {
 
     #[turbo_tasks::function]
     async fn source(&self) -> Result<Vc<OptionIssueSource>> {
-        Ok(Vc::cell(match self.source {
-            Some(s) => Some(s.resolve_source_map(*self.file).to_resolved().await?),
+        Ok(Vc::cell(match &self.source {
+            Some(s) => Some(s.resolve_source_map(*self.file).await?.into_owned()),
             None => None,
         }))
     }
