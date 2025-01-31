@@ -9649,6 +9649,7 @@ dependencies = [
  "sourcemap",
  "strsim 0.11.1",
  "swc_core",
+ "swc_ecma_visit",
  "tokio",
  "tracing",
  "turbo-rcstr",
