@@ -517,9 +517,15 @@ export function runDependingOnPageType<T>(params: {
   }
 
   if (isMiddlewareFile(params.page)) {
-    params.onEdgeServer()
-    return
+    if (params.pageRuntime === 'nodejs') {
+      params.onServer()
+      return
+    } else {
+      params.onEdgeServer()
+      return
+    }
   }
+
   if (isAPIRoute(params.page)) {
     if (isEdgeRuntime(params.pageRuntime)) {
       params.onEdgeServer()
@@ -692,6 +698,20 @@ export async function createEntrypoints(
                 isEdgeServer: false,
                 isDev: false,
               })
+          } else if (isMiddlewareFile(page)) {
+            server[serverBundlePath] = getEdgeServerEntry({
+              ...params,
+              rootDir,
+              absolutePagePath: absolutePagePath,
+              bundlePath: clientBundlePath,
+              isDev: false,
+              isServerComponent,
+              page,
+              middleware: staticInfo?.middleware,
+              pagesType,
+              preferredRegion: staticInfo.preferredRegion,
+              middlewareConfig: staticInfo.middleware,
+            })
           } else if (isAPIRoute(page)) {
             server[serverBundlePath] = [
               getRouteLoaderEntry({

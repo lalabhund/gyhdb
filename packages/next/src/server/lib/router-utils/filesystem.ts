@@ -40,6 +40,7 @@ import { normalizeMetadataRoute } from '../../../lib/metadata/get-metadata-route
 import { RSCPathnameNormalizer } from '../../normalizers/request/rsc'
 import { PrefetchRSCPathnameNormalizer } from '../../normalizers/request/prefetch-rsc'
 import { encodeURIPath } from '../../../shared/lib/encode-uri-path'
+import isError from '../../../lib/is-error'
 
 export type FsOutput = {
   type:
@@ -143,6 +144,10 @@ export async function setupFsCheck(opts: {
   }
   let buildId = 'development'
   let prerenderManifest: PrerenderManifest
+  let hasMiddlewareEntry = false
+  let cachedMiddlewareMatcher:
+    | ReturnType<typeof getMiddlewareRouteMatcher>
+    | undefined
 
   if (!opts.dev) {
     const buildIdPath = path.join(opts.dir, opts.config.distDir, BUILD_ID_FILE)
@@ -215,6 +220,8 @@ export async function setupFsCheck(opts: {
     const middlewareManifest = JSON.parse(
       await fs.readFile(middlewareManifestPath, 'utf8').catch(() => '{}')
     ) as MiddlewareManifest
+
+    hasMiddlewareEntry = Boolean(middlewareManifest.middleware['/'])
 
     const pagesManifest = JSON.parse(
       await fs.readFile(pagesManifestPath, 'utf8')
@@ -664,6 +671,30 @@ export async function setupFsCheck(opts: {
       return this.dynamicRoutes
     },
     getMiddlewareMatchers() {
+      // attempt loading middleware module if no matchers
+      // and not in dev mode and then load matchers from config export
+      // in dev mode this is handled in setup-dev-bundler
+      if (!opts.dev && !hasMiddlewareEntry) {
+        if (cachedMiddlewareMatcher) {
+          return cachedMiddlewareMatcher
+        }
+        try {
+          const middlewareModule = require(
+            path.join(opts.dir, opts.config.distDir, 'server', 'middleware.js')
+          )
+          cachedMiddlewareMatcher = getMiddlewareRouteMatcher(
+            middlewareModule.config?.matchers || [
+              { regexp: '.*', originalSource: '/:path*' },
+            ]
+          )
+          return cachedMiddlewareMatcher
+        } catch (err) {
+          if (isError(err) && err.code !== 'ENOENT') {
+            throw err
+          }
+        }
+      }
+
       return this.middlewareMatcher
     },
   }

@@ -2,24 +2,31 @@
 import { NextRequest, NextResponse, URLPattern } from 'next/server'
 import magicValue from 'shared-package'
 
-export const config = { regions: 'auto' }
+export const config = {
+  regions: 'auto',
+  // runtime: 'nodejs'
+}
 
-const PATTERNS = [
-  [
-    new URLPattern({ pathname: '/:locale/:id' }),
-    ({ pathname }) => ({
-      pathname: '/:locale/:id',
-      params: pathname.groups,
-    }),
-  ],
-  [
-    new URLPattern({ pathname: '/:id' }),
-    ({ pathname }) => ({
-      pathname: '/:id',
-      params: pathname.groups,
-    }),
-  ],
-]
+const PATTERNS =
+  process.env.NEXT_RUNTIME === 'nodejs'
+    ? // URLPattern is not a global in Node.js
+      []
+    : [
+        [
+          new URLPattern({ pathname: '/:locale/:id' }),
+          ({ pathname }) => ({
+            pathname: '/:locale/:id',
+            params: pathname.groups,
+          }),
+        ],
+        [
+          new URLPattern({ pathname: '/:id' }),
+          ({ pathname }) => ({
+            pathname: '/:id',
+            params: pathname.groups,
+          }),
+        ],
+      ]
 
 const params = (url) => {
   const input = url.split('?')[0]
@@ -37,6 +44,16 @@ const params = (url) => {
 
 export async function middleware(request) {
   const url = request.nextUrl
+
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    if (url.pathname.startsWith('/test-node-fs')) {
+      const fs = await import('fs')
+      const path = await import('path')
+      const pkgPath = path.join(process.cwd(), 'package.json')
+      const pkgData = JSON.parse(await fs.promises.readFile(pkgPath, 'utf8'))
+      return NextResponse.json(pkgData)
+    }
+  }
 
   if (request.headers.get('x-prerender-revalidate')) {
     return NextResponse.next({
