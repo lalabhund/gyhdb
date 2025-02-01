@@ -164,9 +164,9 @@ pub async fn client_reference_graph(
                     .map(|module| async move {
                         Ok(VisitClientReferenceNode {
                             state: if let Some(server_component) =
-                                ResolvedVc::try_downcast_type::<NextServerComponentModule>(module)
-                                    .await?
-                            {
+                                ResolvedVc::try_downcast_type_sync::<NextServerComponentModule>(
+                                    module,
+                                ) {
                                 VisitClientReferenceNodeState::InServerComponent {
                                     server_component,
                                 }
@@ -406,8 +406,7 @@ impl Visit<VisitClientReferenceNode> for VisitClientReference {
 
             let referenced_modules = referenced_modules.iter().map(|module| async move {
                 if let Some(client_reference_module) =
-                    ResolvedVc::try_downcast_type::<EcmascriptClientReferenceModule>(*module)
-                        .await?
+                    ResolvedVc::try_downcast_type_sync::<EcmascriptClientReferenceModule>(*module)
                 {
                     return Ok(VisitClientReferenceNode {
                         state: node.state,
@@ -424,7 +423,7 @@ impl Visit<VisitClientReferenceNode> for VisitClientReference {
                 }
 
                 if let Some(client_reference_module) =
-                    ResolvedVc::try_downcast_type::<CssClientReferenceModule>(*module).await?
+                    ResolvedVc::try_downcast_type_sync::<CssClientReferenceModule>(*module)
                 {
                     return Ok(VisitClientReferenceNode {
                         state: node.state,
@@ -441,7 +440,7 @@ impl Visit<VisitClientReferenceNode> for VisitClientReference {
                 }
 
                 if let Some(server_component_asset) =
-                    ResolvedVc::try_downcast_type::<NextServerComponentModule>(*module).await?
+                    ResolvedVc::try_downcast_type_sync::<NextServerComponentModule>(*module)
                 {
                     return Ok(VisitClientReferenceNode {
                         state: VisitClientReferenceNodeState::InServerComponent {
@@ -454,9 +453,7 @@ impl Visit<VisitClientReferenceNode> for VisitClientReference {
                     });
                 }
 
-                if ResolvedVc::try_downcast_type::<NextServerUtilityModule>(*module)
-                    .await?
-                    .is_some()
+                if ResolvedVc::try_downcast_type_sync::<NextServerUtilityModule>(*module).is_some()
                 {
                     return Ok(VisitClientReferenceNode {
                         state: VisitClientReferenceNodeState::InServerUtil,
