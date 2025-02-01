@@ -1,5 +1,4 @@
-use std::collections::{HashMap, HashSet};
-
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde_json::{Map, Number, Value};
 use swc_core::{
     common::{Mark, SyntaxContext},
@@ -22,12 +21,12 @@ pub enum Const {
 }
 
 pub(crate) struct CollectExportedConstVisitor {
-    pub properties: HashMap<String, Option<Const>>,
+    pub properties: FxHashMap<String, Option<Const>>,
     expr_ctx: ExprCtx,
 }
 
 impl CollectExportedConstVisitor {
-    pub fn new(properties_to_extract: HashSet<String>) -> Self {
+    pub fn new(properties_to_extract: FxHashSet<String>) -> Self {
         Self {
             properties: properties_to_extract
                 .into_iter()
